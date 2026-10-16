@@ -1,0 +1,6 @@
+{
+  "name": "LearnSphere Enterprise LMS & Governance",
+  "description": "Enterprise-grade multi-role learning management, course governance studio, compliance audit, and institutional training platform with full project source code export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
