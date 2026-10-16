@@ -28,8 +28,8 @@ In your Vercel project dashboard, go to **Settings → Environment Variables** a
 
 | Variable | Value | Required |
 |----------|-------|----------|
-| `VITE_SUPABASE_URL` | `https://your-project-ref.supabase.co` | Yes |
-| `VITE_SUPABASE_ANON_KEY` | `your-anon-public-key` | Yes |
+| `VITE_SUPABASE_URL` | `https://mgwxfeutwzbhrokdohih.supabase.co` | Yes |
+| `VITE_SUPABASE_ANON_KEY` | `sb_publishable_ThHoPtMTYvp4ypdMmdB8ew_eWGYu-f5` | Yes |
 | `APP_URL` | `https://your-app.vercel.app` | Yes |
 
 ### Step 4: Redeploy
@@ -37,31 +37,51 @@ After adding environment variables, go to **Deployments** and click **"Redeploy"
 
 ---
 
-## Part 2: Backend Deployment Options
+## Part 2: Backend Deployment to Vercel (Serverless Functions)
 
-### Option A: Railway (Recommended for Node.js)
-1. Go to [railway.app](https://railway.app)
-2. Create a new project
-3. Connect your GitHub repository
-4. Select the `server/` directory as the source
-5. Add environment variables (see below)
-6. Deploy
+You can deploy the backend API as Vercel Serverless Functions since this is a Node.js Express server.
 
-### Option B: Render
-1. Go to [render.com](https://render.com)
-2. Create a new Web Service
-3. Connect your GitHub repository
-4. Set root directory to `server/`
-5. Set build command: `npm install`
-6. Set start command: `npm start` or `npm run dev`
-7. Add environment variables
-8. Deploy
+### Step 1: Configure vercel.json for API Routes
+Add this to your root `vercel.json` (create if doesn't exist):
 
-### Option C: Fly.io
-1. Install flyctl: `curl -L https://fly.io/install.sh | sh`
-2. Run: `fly launch` in the `server/` directory
-3. Add environment variables: `fly secrets set KEY=value`
-4. Deploy: `fly deploy`
+```json
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "functions": {
+    "server/index.ts": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/server/index.ts" }
+  ]
+}
+```
+
+### Step 2: Update Backend for Vercel
+The Express server needs to be configured for serverless. Alternatively, update `server/index.ts` to export the app for Vercel.
+
+But easier: deploy the server as a separate Vercel project, or include as functions. For this project, it's simpler to deploy the frontend to Vercel and backend as Vercel functions in the same project.
+
+### Step 3: Add Backend Environment Variables to Vercel
+In Vercel project dashboard → **Settings → Environment Variables**, add these:
+
+| Variable | Value | Required |
+|----------|-------|----------|
+| `PORT` | `3001` | Yes |
+| `NODE_ENV` | `production` | Yes |
+| `CORS_ORIGIN` | `https://your-app.vercel.app` | Yes |
+| `JWT_SECRET` | Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` | Yes |
+| `JWT_REFRESH_SECRET` | Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` | Yes |
+| `JWT_EXPIRES_IN` | `15m` | No |
+| `REFRESH_EXPIRES_IN` | `7d` | No |
+| `DATABASE_URL` | `postgresql://postgres:[Mwananchi20.]@db.mgwxfeutwzbhrokdohih.supabase.co:5432/postgres` | Yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | `sb_secret_GIUPtim-bLv3T_M3N03RZw_A1IW6003` | Yes |
+| `ENABLE_MFA` | `true` | No |
+| `ENABLE_EMAIL_NOTIFICATIONS` | `true` | No |
+| `ENABLE_AUDIT_LOGGING` | `true` | No |
 
 ---
 
@@ -78,7 +98,7 @@ Add these to your backend hosting platform:
 | `JWT_REFRESH_SECRET` | `your-32-char-random-string` | Yes |
 | `JWT_EXPIRES_IN` | `15m` | No |
 | `REFRESH_EXPIRES_IN` | `7d` | No |
-| `DATABASE_URL` | `postgresql://postgres:...@db.*.supabase.co:5432/postgres` | Yes |
+| `DATABASE_URL` | `postgresql://postgres:[Mwananchi20.]@db.mgwxfeutwzbhrokdohih.supabase.co:5432/postgres` | Yes |
 | `REDIS_URL` | `redis://...` | Optional |
 | `STORAGE_PROVIDER` | `local` | No |
 | `STORAGE_PATH` | `./uploads` | No |
@@ -182,10 +202,16 @@ Or in your backend code, configure CORS to accept requests from your Vercel doma
 postgresql://postgres:YOUR_PASSWORD@db.YOUR_PROJECT_REF.supabase.co:5432/postgres
 ```
 
-### Where to Find It
-1. Supabase Dashboard → **Settings → Database**
-2. Copy the **Connection string** under "URI" format
-3. Replace `YOUR_PASSWORD` with your database password
+### Where to Find It (Step-by-Step)
+1. Open [Supabase Dashboard](https://supabase.com/dashboard)
+2. Select your project: **mgwxfeutwzbhrokdohih**
+3. Go to **Settings → Database** (left sidebar, under Configuration)
+4. Scroll down to **Connection string → URI**
+5. Copy the complete URI - it looks like: `postgresql://postgres:[PASSWORD]@db.mgwxfeutwzbhrokdohih.supabase.co:5432/postgres`
+6. Replace `[PASSWORD]` with your actual database password (the one you set when creating the project)
+7. Use this full string as `DATABASE_URL` in your backend `.env` and in your backend hosting platform (Railway/Render/Fly.io)
+
+**Tip:** If you don't remember your database password, you can reset it in Settings → Database → Reset database password.
 
 ---
 

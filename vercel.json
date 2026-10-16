@@ -1,0 +1,18 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "functions": {
+    "server/index.ts": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/server/index.ts" }
+  ],
+  "env": {
+    "VITE_SUPABASE_URL": "https://mgwxfeutwzbhrokdohih.supabase.co",
+    "VITE_SUPABASE_ANON_KEY": "sb_publishable_ThHoPtMTYvp4ypdMmdB8ew_eWGYu-f5",
+    "APP_URL": "@app_url"
+  }
+}

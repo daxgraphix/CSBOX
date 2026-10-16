@@ -427,39 +427,39 @@ ALTER TABLE support_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: Users can read their own profile, admins can read all
-CREATE POLICY profiles_own_read ON profiles FOR SELECT USING (auth.uid()::text = id::text);
+CREATE POLICY profiles_own_read ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY profiles_admin_all ON profiles FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role = 'super_admin')
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
 );
 CREATE POLICY profiles_admin_update ON profiles FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 
 -- Organizations: Members can read their org, admins can manage
 CREATE POLICY org_members_read ON organizations FOR SELECT USING (
-  EXISTS (SELECT 1 FROM organization_memberships WHERE organization_id = organizations.id AND user_id = auth.uid()::text)
+  EXISTS (SELECT 1 FROM organization_memberships WHERE organization_id = organizations.id AND user_id = auth.uid())
 );
 CREATE POLICY org_admin_all ON organizations FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 
 -- Organization memberships: Members can read, org admins can manage
 CREATE POLICY org_memberships_read ON organization_memberships FOR SELECT USING (
-  user_id = auth.uid()::text OR
-  EXISTS (SELECT 1 FROM organization_memberships om JOIN profiles p ON p.id = om.user_id WHERE om.organization_id = organization_memberships.organization_id AND p.id = auth.uid()::text AND p.role IN ('super_admin', 'admin'))
+  user_id = auth.uid() OR
+  EXISTS (SELECT 1 FROM organization_memberships om JOIN profiles p ON p.id = om.user_id WHERE om.organization_id = organization_memberships.organization_id AND p.id = auth.uid() AND p.role IN ('super_admin', 'admin'))
 );
 
 -- User roles: Users can read their own roles, admins can manage
-CREATE POLICY user_roles_own_read ON user_roles FOR SELECT USING (user_id = auth.uid()::text);
+CREATE POLICY user_roles_own_read ON user_roles FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY user_roles_admin_all ON user_roles FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role = 'super_admin')
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
 );
 
 -- Courses: Published courses readable by all, authors/admins can manage
 CREATE POLICY courses_published_read ON courses FOR SELECT USING (is_archived = false);
 CREATE POLICY courses_instructor_manage ON courses FOR ALL USING (
-  instructor_id = auth.uid()::text OR
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin'))
+  instructor_id = auth.uid() OR
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 
 -- Course versions: Same as courses
@@ -467,7 +467,7 @@ CREATE POLICY course_versions_read ON course_versions FOR SELECT USING (
   EXISTS (SELECT 1 FROM courses WHERE courses.id = course_versions.course_id AND is_archived = false)
 );
 CREATE POLICY course_versions_manage ON course_versions FOR ALL USING (
-  EXISTS (SELECT 1 FROM courses WHERE courses.id = course_versions.course_id AND (courses.instructor_id = auth.uid()::text OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin'))))
+  EXISTS (SELECT 1 FROM courses WHERE courses.id = course_versions.course_id AND (courses.instructor_id = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))))
 );
 
 -- Modules: Readable if course version is published
@@ -482,7 +482,7 @@ CREATE POLICY modules_manage ON modules FOR ALL USING (
   EXISTS (
     SELECT 1 FROM course_versions cv
     JOIN courses c ON c.id = cv.course_id
-    WHERE cv.id = modules.course_version_id AND (c.instructor_id = auth.uid()::text OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin')))
+    WHERE cv.id = modules.course_version_id AND (c.instructor_id = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin')))
   )
 );
 
@@ -500,7 +500,7 @@ CREATE POLICY lessons_manage ON lessons FOR ALL USING (
     SELECT 1 FROM modules m
     JOIN course_versions cv ON cv.id = m.course_version_id
     JOIN courses c ON c.id = cv.course_id
-    WHERE m.id = lessons.module_id AND (c.instructor_id = auth.uid()::text OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin')))
+    WHERE m.id = lessons.module_id AND (c.instructor_id = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin')))
   )
 );
 
@@ -520,7 +520,7 @@ CREATE POLICY quizzes_manage ON quizzes FOR ALL USING (
     JOIN modules m ON m.id = l.module_id
     JOIN course_versions cv ON cv.id = m.course_version_id
     JOIN courses c ON c.id = cv.course_id
-    WHERE l.id = quizzes.lesson_id AND (c.instructor_id = auth.uid()::text OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin')))
+    WHERE l.id = quizzes.lesson_id AND (c.instructor_id = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin')))
   )
 );
 
@@ -528,28 +528,28 @@ CREATE POLICY quizzes_manage ON quizzes FOR ALL USING (
 CREATE POLICY quiz_questions_read ON quiz_questions FOR SELECT USING (
   EXISTS (
     SELECT 1 FROM quizzes q
-    JOIN lessons l ON l.id = q.quiz_id
+    JOIN lessons l ON l.id = q.lesson_id
     JOIN modules m ON m.id = l.module_id
     JOIN course_versions cv ON cv.id = m.course_version_id
     JOIN courses c ON c.id = cv.course_id
-    WHERE q.quiz_id = quiz_questions.quiz_id AND c.is_archived = false
+    WHERE q.id = quiz_questions.quiz_id AND c.is_archived = false
   )
 );
 CREATE POLICY quiz_questions_manage ON quiz_questions FOR ALL USING (
   EXISTS (
     SELECT 1 FROM quizzes q
-    JOIN lessons l ON l.id = q.quiz_id
+    JOIN lessons l ON l.id = q.lesson_id
     JOIN modules m ON m.id = l.module_id
     JOIN course_versions cv ON cv.id = m.course_version_id
     JOIN courses c ON c.id = cv.course_id
-    WHERE q.quiz_id = quiz_questions.quiz_id AND (c.instructor_id = auth.uid()::text OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin')))
+    WHERE q.id = quiz_questions.quiz_id AND (c.instructor_id = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin')))
   )
 );
 
 -- Quiz attempts: Users can see their own attempts
-CREATE POLICY quiz_attempts_own ON quiz_attempts FOR ALL USING (learner_id = auth.uid()::text);
+CREATE POLICY quiz_attempts_own ON quiz_attempts FOR ALL USING (learner_id = auth.uid());
 CREATE POLICY quiz_attempts_admin_read ON quiz_attempts FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin', 'instructor', 'reviewer'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin', 'instructor', 'reviewer'))
 );
 
 -- Assignments: Same as lessons
@@ -568,12 +568,12 @@ CREATE POLICY assignments_manage ON assignments FOR ALL USING (
     JOIN modules m ON m.id = l.module_id
     JOIN course_versions cv ON cv.id = m.course_version_id
     JOIN courses c ON c.id = cv.course_id
-    WHERE l.id = assignments.lesson_id AND (c.instructor_id = auth.uid()::text OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin')))
+    WHERE l.id = assignments.lesson_id AND (c.instructor_id = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin')))
   )
 );
 
 -- Assignment submissions: Users can see their own, instructors/admins can see all
-CREATE POLICY assignment_submissions_own ON assignment_submissions FOR ALL USING (learner_id = auth.uid()::text);
+CREATE POLICY assignment_submissions_own ON assignment_submissions FOR ALL USING (learner_id = auth.uid());
 CREATE POLICY assignment_submissions_instructor_read ON assignment_submissions FOR SELECT USING (
   EXISTS (
     SELECT 1 FROM assignments a
@@ -581,41 +581,41 @@ CREATE POLICY assignment_submissions_instructor_read ON assignment_submissions F
     JOIN modules m ON m.id = l.module_id
     JOIN course_versions cv ON cv.id = m.course_version_id
     JOIN courses c ON c.id = cv.course_id
-    WHERE a.id = assignment_submissions.assignment_id AND c.instructor_id = auth.uid()::text
+    WHERE a.id = assignment_submissions.assignment_id AND c.instructor_id = auth.uid()
   ) OR
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin', 'reviewer'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin', 'reviewer'))
 );
 
 -- Enrollments: Users can see their own enrollments
-CREATE POLICY enrollments_own ON enrollments FOR ALL USING (learner_id = auth.uid()::text);
+CREATE POLICY enrollments_own ON enrollments FOR ALL USING (learner_id = auth.uid());
 CREATE POLICY enrollments_admin_read ON enrollments FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin', 'instructor'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin', 'instructor'))
 );
 
 -- Certificates: Valid certificates readable by all, owners can see their own
 CREATE POLICY certificates_valid_read ON certificates FOR SELECT USING (status = 'valid');
-CREATE POLICY certificates_own ON certificates FOR ALL USING (learner_id = auth.uid()::text);
+CREATE POLICY certificates_own ON certificates FOR ALL USING (learner_id = auth.uid());
 CREATE POLICY certificates_admin_all ON certificates FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 
 -- Audit logs: Only super_admin can read
 CREATE POLICY audit_super_admin_read ON audit_logs FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role = 'super_admin')
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
 );
 
 -- Support tickets: Users can see their own tickets, admins/support can see all
-CREATE POLICY support_own ON support_tickets FOR ALL USING (user_id = auth.uid()::text);
+CREATE POLICY support_own ON support_tickets FOR ALL USING (user_id = auth.uid());
 CREATE POLICY support_admin_all ON support_tickets FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin', 'support'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin', 'support'))
 );
 
 -- Support messages: Same as tickets
 CREATE POLICY support_messages_own ON support_messages FOR SELECT USING (
-  EXISTS (SELECT 1 FROM support_tickets WHERE support_tickets.id = support_messages.ticket_id AND support_tickets.user_id = auth.uid()::text)
+  EXISTS (SELECT 1 FROM support_tickets WHERE support_tickets.id = support_messages.ticket_id AND support_tickets.user_id = auth.uid())
 );
 CREATE POLICY support_messages_admin_all ON support_messages FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()::text AND role IN ('super_admin', 'admin', 'support'))
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin', 'support'))
 );
 
 -- -----------------------------------------------------------------------------
