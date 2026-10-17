@@ -428,6 +428,7 @@ ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: Users can read their own profile, admins can read all
 CREATE POLICY profiles_own_read ON profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY profiles_own_insert ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 CREATE POLICY profiles_admin_all ON profiles FOR ALL USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
 );

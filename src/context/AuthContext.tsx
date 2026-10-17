@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { User, RoleType, Permission } from '../types';
-import { INITIAL_USERS } from '../data/mockData';
+import getSupabase from '../lib/supabase';
 
 interface AuthContextType {
   currentUser: User | null;
   allUsers: User[];
   isAuthenticated: boolean;
   isSuspended: boolean;
+  isLoadingSession: boolean;
   switchUser: (userId: string) => void;
   hasPermission: (permission: Permission) => boolean;
   hasRole: (role: RoleType | RoleType[]) => boolean;
@@ -17,7 +18,7 @@ interface AuthContextType {
   activePortal: 'public' | 'learner' | 'instructor' | 'reviewer' | 'admin' | 'organization' | 'support';
   setActivePortal: (portal: 'public' | 'learner' | 'instructor' | 'reviewer' | 'admin' | 'organization' | 'support') => void;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   register: (email: string, password: string, role: RoleType, fullName: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   setMfaEnabled: (enabled: boolean) => Promise<void>;
@@ -96,157 +97,203 @@ const ROLE_PERMISSIONS: Record<RoleType, Permission[]> = {
   ],
 };
 
+const mapProfileToUser = (profile: any): User => ({
+  id: profile.id,
+  name: profile.full_name,
+  email: profile.email,
+  avatar: profile.avatar_url || '',
+  role: profile.role,
+  organizationId: profile.organization_id,
+  organizationName: profile.organization_name,
+  isSuspended: profile.is_suspended,
+  suspensionReason: profile.suspension_reason,
+  lastLogin: profile.last_login || new Date().toISOString(),
+  mfaEnabled: profile.mfa_enabled,
+  preferences: {
+    language: (profile.language_preference as 'en' | 'sw') || 'en',
+    emailNotifications: profile.email_notifications ?? true,
+    smsNotifications: profile.sms_notifications ?? false,
+  },
+});
+
+const portalForRole = (role: RoleType): 'public' | 'learner' | 'instructor' | 'reviewer' | 'admin' | 'organization' | 'support' => {
+  switch (role) {
+    case 'super_admin':
+    case 'admin': return 'admin';
+    case 'instructor': return 'instructor';
+    case 'reviewer': return 'reviewer';
+    case 'organization': return 'organization';
+    case 'support': return 'support';
+    case 'student':
+    default: return 'learner';
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activePortal, setActivePortal] = useState<'public' | 'learner' | 'instructor' | 'reviewer' | 'admin' | 'organization' | 'support'>('public');
   const [isLoadingSession, setIsLoadingSession] = useState<boolean>(true);
 
-  const currentUser = currentUserId ? (users.find(u => u.id === currentUserId) || null) : null;
-  const isAuthenticated = currentUserId !== null;
+  const isAuthenticated = currentUser !== null;
+  const isSuspended = currentUser?.isSuspended ?? false;
 
-  // Load saved session from localStorage on mount
+  // Load saved session from Supabase on mount
   useEffect(() => {
-    const saved = localStorage.getItem('csbox_session');
-    if (saved) {
-      try {
-        const { userId, portal, rememberMe } = JSON.parse(saved);
-        if (rememberMe) {
-          const user = users.find(u => u.id === userId);
-          if (user && !user.isSuspended) {
-            setCurrentUserId(userId);
-            setActivePortal(portal as any);
+    let mounted = true;
+
+    const initAuth = async () => {
+      const supabase = getSupabase();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user && mounted) {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', session.user.email)
+          .single();
+
+        if (!error && profile && mounted) {
+          const user = mapProfileToUser(profile);
+          setUsers([user]);
+          setCurrentUser(user);
+          setActivePortal(portalForRole(user.role));
+        }
+      }
+
+      if (mounted) setIsLoadingSession(false);
+    };
+
+    initAuth();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const supabaseAuthChange = useCallback(() => {
+    const supabase = getSupabase();
+    return supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session?.user) {
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', session.user.email)
+            .single();
+
+          if (!error && profile) {
+            const user = mapProfileToUser(profile);
+            setUsers(prev => prev.some(u => u.id === user.id) ? prev : [...prev, user]);
+            setCurrentUser(user);
+            setActivePortal(portalForRole(user.role));
           }
         }
-      } catch {
-        // Ignore parse errors
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        setUsers([]);
+        setActivePortal('public');
+        localStorage.removeItem('csbox_session');
       }
-    }
-    setIsLoadingSession(false);
-  }, [users]);
+    });
+  }, []);
 
-  const switchUser = (userId: string) => {
-    const target = users.find(u => u.id === userId);
-    if (!target) return;
-    setCurrentUserId(userId);
+  useEffect(() => {
+    const { data: { subscription } } = supabaseAuthChange();
+    return () => subscription.unsubscribe();
+  }, [supabaseAuthChange]);
 
-    // Auto-align default portal based on persona
-    switch (target.role) {
-      case 'super_admin':
-      case 'admin':
-        setActivePortal('admin');
-        break;
-      case 'instructor':
-        setActivePortal('instructor');
-        break;
-      case 'reviewer':
-        setActivePortal('reviewer');
-        break;
-      case 'organization':
-        setActivePortal('organization');
-        break;
-      case 'support':
-        setActivePortal('support');
-        break;
-      case 'student':
-      default:
-        setActivePortal('learner');
-    }
-  };
-
-  const hasPermission = (permission: Permission): boolean => {
+  const hasPermission = useCallback((permission: Permission): boolean => {
     if (!currentUser || currentUser.isSuspended) return false;
     const userPermissions = ROLE_PERMISSIONS[currentUser.role] || [];
     return userPermissions.includes(permission);
-  };
+  }, [currentUser]);
 
-  const hasRole = (role: RoleType | RoleType[]): boolean => {
+  const hasRole = useCallback((role: RoleType | RoleType[]): boolean => {
     if (!currentUser || currentUser.isSuspended) return false;
     if (Array.isArray(role)) {
       return role.includes(currentUser.role);
     }
     return currentUser.role === role;
-  };
+  }, [currentUser]);
 
-  const suspendUser = (userId: string, reason: string) => {
+  const suspendUser = useCallback((userId: string, reason: string) => {
     setUsers(prev => prev.map(u => {
       if (u.id === userId) {
-        return {
-          ...u,
-          isSuspended: true,
-          suspensionReason: reason,
-        };
+        return { ...u, isSuspended: true, suspensionReason: reason };
       }
       return u;
     }));
-  };
+    if (currentUser?.id === userId) {
+      setCurrentUser(prev => prev ? { ...prev, isSuspended: true, suspensionReason: reason } : null);
+    }
+  }, [currentUser]);
 
-  const unsuspendUser = (userId: string) => {
+  const unsuspendUser = useCallback((userId: string) => {
     setUsers(prev => prev.map(u => {
       if (u.id === userId) {
-        return {
-          ...u,
-          isSuspended: false,
-          suspensionReason: undefined,
-        };
+        return { ...u, isSuspended: false, suspensionReason: undefined };
       }
       return u;
     }));
-  };
+    if (currentUser?.id === userId) {
+      setCurrentUser(prev => prev ? { ...prev, isSuspended: false, suspensionReason: undefined } : null);
+    }
+  }, [currentUser]);
 
-  const assignRole = (userId: string, newRole: RoleType) => {
+  const assignRole = useCallback((userId: string, newRole: RoleType) => {
     setUsers(prev => prev.map(u => {
       if (u.id === userId) {
         return { ...u, role: newRole };
       }
       return u;
     }));
-  };
+    if (currentUser?.id === userId) {
+      setCurrentUser(prev => prev ? { ...prev, role: newRole } : null);
+      setActivePortal(portalForRole(newRole));
+    }
+  }, [currentUser]);
 
-  const updateUserPreferences = (prefs: Partial<User['preferences']>) => {
+  const updateUserPreferences = useCallback((prefs: Partial<User['preferences']>) => {
     setUsers(prev => prev.map(u => {
       if (u.id === currentUser?.id) {
-        return {
-          ...u,
-          preferences: { ...u.preferences, ...prefs },
-        };
+        return { ...u, preferences: { ...u.preferences, ...prefs } };
       }
       return u;
     }));
-  };
+    setCurrentUser(prev => prev ? { ...prev, preferences: { ...prev.preferences, ...prefs } } : null);
+  }, [currentUser]);
 
   const login = useCallback(async (email: string, password: string, rememberMe = false) => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 600));
-    const user = users.find(u => u.email === email);
-    if (!user) {
-      throw new Error('Invalid email or password');
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error || !data.user) {
+      throw new Error(error?.message || 'Invalid email or password');
     }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
+      throw new Error('Profile not found. Please contact support.');
+    }
+
+    const user = mapProfileToUser(profile);
+
     if (user.isSuspended) {
+      await supabase.auth.signOut();
       throw new Error('Account is suspended. Please contact support.');
     }
-    setCurrentUserId(user.id);
-    switch (user.role) {
-      case 'super_admin':
-      case 'admin':
-        setActivePortal('admin');
-        break;
-      case 'instructor':
-        setActivePortal('instructor');
-        break;
-      case 'reviewer':
-        setActivePortal('reviewer');
-        break;
-      case 'organization':
-        setActivePortal('organization');
-        break;
-      case 'support':
-        setActivePortal('support');
-        break;
-      case 'student':
-      default:
-        setActivePortal('learner');
-    }
+
+    setUsers(prev => prev.some(u => u.id === user.id) ? prev : [...prev, user]);
+    setCurrentUser(user);
+    setActivePortal(portalForRole(user.role));
+
     if (rememberMe) {
       localStorage.setItem('csbox_session', JSON.stringify({
         userId: user.id,
@@ -258,27 +305,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         rememberMe: true,
       }));
     }
-  }, [users]);
+  }, []);
 
-  const logout = useCallback(() => {
-    setCurrentUserId(null);
+  const logout = useCallback(async () => {
+    const supabase = getSupabase();
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setUsers([]);
     setActivePortal('public');
     localStorage.removeItem('csbox_session');
   }, []);
 
   const register = useCallback(async (email: string, password: string, role: RoleType, fullName: string) => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 600));
-    if (users.find(u => u.email === email)) {
-      throw new Error('Email already registered');
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.signUp({ email, password });
+
+    if (error || !data.user) {
+      throw new Error(error?.message || 'Registration failed');
     }
+
     const newUser: User = {
-      id: `usr_${Date.now()}`,
+      id: data.user.id,
       name: fullName,
       email,
       avatar: '',
       role,
+      organizationId: undefined,
+      organizationName: undefined,
       isSuspended: false,
+      suspensionReason: undefined,
       lastLogin: new Date().toISOString(),
       mfaEnabled: false,
       preferences: {
@@ -287,41 +342,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         smsNotifications: false,
       },
     };
-    setUsers(prev => [...prev, newUser]);
-    setCurrentUserId(newUser.id);
-    switch (role) {
-      case 'super_admin':
-      case 'admin':
-        setActivePortal('admin');
-        break;
-      case 'instructor':
-        setActivePortal('instructor');
-        break;
-      case 'reviewer':
-        setActivePortal('reviewer');
-        break;
-      case 'organization':
-        setActivePortal('organization');
-        break;
-      case 'support':
-        setActivePortal('support');
-        break;
-      case 'student':
-      default:
-        setActivePortal('learner');
+
+    const { error: insertError } = await supabase
+      .from('profiles')
+      .insert([{
+        id: data.user.id,
+        email,
+        full_name: fullName,
+        role,
+        is_suspended: false,
+        mfa_enabled: false,
+        language_preference: 'en',
+        email_notifications: true,
+        sms_notifications: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }]);
+
+    if (insertError) {
+      throw new Error(insertError.message);
     }
-  }, [users]);
+
+    setUsers(prev => [...prev, newUser]);
+    setCurrentUser(newUser);
+    setActivePortal(portalForRole(role));
+  }, []);
 
   const resetPassword = useCallback(async (email: string) => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 600));
-    const user = users.find(u => u.email === email);
-    if (!user) {
-      throw new Error('No account found with this email');
+    const supabase = getSupabase();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      throw new Error(error.message);
     }
-    // In a real app, this would send a reset email
     return { success: true, message: 'Password reset link sent to ' + email };
-  }, [users]);
+  }, []);
 
   const setMfaEnabled = useCallback(async (enabled: boolean) => {
     if (!currentUser) {
@@ -333,7 +390,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return u;
     }));
+    setCurrentUser(prev => prev ? { ...prev, mfaEnabled: enabled } : null);
   }, [currentUser]);
+
+  const switchUser = useCallback((userId: string) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+    setCurrentUser(target);
+    setActivePortal(portalForRole(target.role));
+  }, [users]);
 
   return (
     <AuthContext.Provider
@@ -341,7 +406,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         allUsers: users,
         isAuthenticated,
-        isSuspended: currentUser?.isSuspended ?? false,
+        isSuspended,
+        isLoadingSession,
         switchUser,
         hasPermission,
         hasRole,
@@ -356,7 +422,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         resetPassword,
         setMfaEnabled,
-        isLoadingSession,
       }}
     >
       {children}
