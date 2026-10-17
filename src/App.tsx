@@ -568,10 +568,9 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <AuthProvider>
-        <AuditProvider>
-          <CourseProvider>
-            <ErrorBoundary fallback={<div className="p-6 bg-red-50 border border-red-200 rounded-lg text-red-700 text-center"><h3 className="text-lg font-bold mb-2">Application Error</h3><p className="mb-4">An unexpected error occurred. Please refresh the page.</p></div>}>
+      <AuditProvider>
+        <CourseProvider>
+          <ErrorBoundary fallback={<div className="p-6 bg-red-50 border border-red-200 rounded-lg text-red-700 text-center"><h3 className="text-lg font-bold mb-2">Application Error</h3><p className="mb-4">An unexpected error occurred. Please refresh the page.</p></div>}>
               {showSignup ? (
                 <SignupScreen />
               ) : (
@@ -580,19 +579,16 @@ export default function App() {
             </ErrorBoundary>
           </CourseProvider>
         </AuditProvider>
-      </AuthProvider>
     );
   }
 
   return (
-    <AuthProvider>
-      <AuditProvider>
-        <CourseProvider>
-          <ErrorBoundary fallback={<div className="p-6 bg-red-50 border border-red-200 rounded-lg text-red-700 text-center"><h3 className="text-lg font-bold mb-2">Application Error</h3><p className="mb-4">An unexpected error occurred. Please refresh the page.</p></div>}>
+    <AuditProvider>
+      <CourseProvider>
+        <ErrorBoundary fallback={<div className="p-6 bg-red-50 border border-red-200 rounded-lg text-red-700 text-center"><h3 className="text-lg font-bold mb-2">Application Error</h3><p className="mb-4">An unexpected error occurred. Please refresh the page.</p></div>}>
             <MainShell />
           </ErrorBoundary>
         </CourseProvider>
       </AuditProvider>
-    </AuthProvider>
   );
 }
