@@ -13,6 +13,6 @@
   "env": {
     "VITE_SUPABASE_URL": "https://mgwxfeutwzbhrokdohih.supabase.co",
     "VITE_SUPABASE_ANON_KEY": "sb_publishable_ThHoPtMTYvp4ypdMmdB8ew_eWGYu-f5",
-    "APP_URL": "@app_url"
+    "APP_URL": "https://csboxx.vercel.app"
   }
 }
